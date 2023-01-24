@@ -1,0 +1,85 @@
+[Net.ServicePointManager]::SecurityProtocol = "Tls, Tls11, Tls12, Ssl3"
+
+# Setting variables
+$setupFilePath = "C:\Temp"
+
+# Setting variables specific for MMA
+$setupMmaFileName = "MMASetup-AMD64.exe"
+$argumentListMma = '/C:"setup.exe /qn /l*v C:\Temp\AgentUpgrade.log AcceptEndUserLicenseAgreement=1"'
+$URI_MMA = "https://aka.ms/MonitoringAgentWindows"
+
+# Setting variables specific for DependencyAgent
+$setupDependencyFileName = "InstallDependencyAgent-Windows.exe"
+$argumentListDependency = '/C:" /S /RebootMode=manual"'
+$URI_Dependency = "https://aka.ms/DependencyAgentWindows"
+
+# Checking if temporary path exists otherwise create it
+if(!(Test-Path $setupFilePath))
+{
+    Write-Output "Creating folder $setupFilePath since it does not exist ... "
+    New-Item -path $setupFilePath -ItemType Directory
+    Write-Output "Folder $setupFilePath created successfully."
+}
+
+#Check if the file was already downloaded hence overwrite it, otherwise download it from scratch
+if (Test-Path $($setupFilePath+"\"+$setupMmaFileName))
+{
+    Write-Output "The file $setupMmaFileName already exists, overwriting with a new copy ... "
+}
+else
+{
+    Write-Output "The file $setupMmaFileName does not exist, downloading ... "
+}
+
+# Downloading the file
+try
+{
+    $Response = Invoke-WebRequest -Uri $URI_MMA -OutFile $($setupFilePath+"\"+$setupMmaFileName) -ErrorAction Stop
+    ##$Response = Invoke-WebRequest -Uri $URI_MMA -Proxy "http://myproxy:8080/" -ProxyUseDefaultCredentials -OutFile $($setupFilePath+"\"+$setupMmaFileName) -ErrorAction Stop
+    #$StatusCode = $Response.StatusCode
+
+    # This will only execute if the Invoke-WebRequest is successful.
+    Write-Output "Download of $setupMmaFileName, done!"
+    Write-Output "Starting the upgrade process ... "
+    start-process $($setupFilePath+"\"+$setupMmaFileName) -ArgumentList $argumentListMma -Wait
+    Write-Output "Agent Upgrade process completed."
+    Write-Output "Checking if Microsoft Dependency Agent is installed ..."
+    try
+    {
+        Get-Service -Name MicrosoftDependencyAgent -ErrorAction Stop | Out-Null
+        Write-Output "Microsoft Dependency Agent is installed. Moving on with the upgrade."
+        if (Test-Path $($setupFilePath+"\"+$setupDependencyFileName))
+        {
+            Write-Output "The file $setupDependencyFileName already exists, overwriting with a new copy ... "
+        }
+        else
+        {
+            Write-Output "The file $setupDependencyFileName does not exist, downloading ... "
+        }
+        try
+        {
+            $Response = Invoke-WebRequest -Uri $URI_Dependency -OutFile $($setupFilePath+"\"+$setupDependencyFileName) -ErrorAction Stop
+            #$Response = Invoke-WebRequest -Uri $URI_Dependency -Proxy "http://myproxy:8080/" -ProxyUseDefaultCredentials -OutFile $($setupFilePath+"\"+$setupDependencyFileName) -ErrorAction Stop
+            Write-Output "Download of $setupDependencyFileName, done!"
+            Write-Output "Starting the upgrade process ... "
+            start-process $($setupFilePath+"\"+$setupDependencyFileName) -ArgumentList $argumentListDependency -Wait
+            Write-Output "Dependency Agent Upgrade process completed."
+        }
+        catch
+        {
+            Write-Output "Error downloading the new Microsoft Dependency Agent installer"
+        }
+    }
+    catch
+    {
+        Write-Output "Dependency Agent is not installed."
+    }
+}
+catch
+{
+    $StatusCode = $_.Exception.Response.StatusCode.value__
+    Write-Output "An error occurred during file download. The error code code is ==$StatusCode==."
+}
+
+# Logging runbook completion
+Write-Output "Runbook execution completed."
